@@ -39,7 +39,7 @@ Este aplicativo em Rust monitora um diretório específico para novos arquivos d
 ### Uso
 1. Certifique-se de que o SQL Server está rodando em `127.0.0.1` com o banco `TESTE` e a tabela `TABELA`.
 2. Atualize a string de conexão em `main()` com suas credenciais.
-3. Execute o programa: `cargo run`.
+3. Execute o programa: `cargo build --release` ou `cargo run`.
 4. Adicione arquivos `.mp3` ou `.wav` ao diretório `\\127.0.0.1\pasta` para acionar o processamento.
 
 ---
@@ -85,7 +85,7 @@ This Rust application monitors a specified directory for new audio files (`.mp3`
 ### Usage
 1. Ensure SQL Server is running at `127.0.0.1` with the database `TESTE` and table `TABELA`.
 2. Update the connection string in `main()` with your credentials.
-3. Run the program: `cargo run`.
+3. Run the program: `cargo build --release` or `cargo run`.
 4. Add `.mp3` or `.wav` files to `\\127.0.0.1\pasta` to trigger processing.
 
 ---
