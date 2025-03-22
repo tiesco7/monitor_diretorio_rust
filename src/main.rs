@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"] // ´para windows
+
 use notify::{RecursiveMode, Watcher, EventKind};
 use std::sync::mpsc::channel;
 use std::path::Path;
