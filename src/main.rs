@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 use notify::{RecursiveMode, Watcher, EventKind};
 use std::sync::mpsc::channel;
 use std::path::Path;
@@ -6,27 +8,46 @@ use odbc_safe::AutocommitMode;
 use chrono::{NaiveDate, Local};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use regex::Regex;
-
+use std::fs::OpenOptions;
+use std::io::Write;
 
 fn main() {
     let conexao = "DRIVER={SQL Server};SERVER=127.0.0.1;DATABASE=TESTE;UID=usuariosql;PWD=senhadificil";
-    let a = create_environment_v3().map_err(|e| e.unwrap()).expect("Falha ao criar environment.");
-    let cnx = a.connect_with_connection_string(conexao).expect("Falha ao conectar.");
+    let a = match create_environment_v3().map_err(|e| e.unwrap()) {
+        Ok(env) => env,
+        Err(e) => {
+            log_error(&format!("Falha ao criar environment: {:?}", e));
+            panic!("Falha ao criar environment.");
+        }
+    };
+    let cnx = match a.connect_with_connection_string(conexao) {
+        Ok(conn) => conn,
+        Err(e) => {
+            log_error(&format!("Falha ao conectar: {:?}", e));
+            panic!("Falha ao conectar.");
+        }
+    };
 
     let diretorio = r"\\127.0.0.1\pasta";
-
     let (tx, rx) = channel();
 
-    let mut watcher = notify::recommended_watcher(move |res| {
+    let mut watcher = match notify::recommended_watcher(move |res| {
         match res {
             Ok(event) => tx.send(event).unwrap(),
-            Err(e) => println!("Erro no watcher: {:?}", e),
+            Err(e) => log_error(&format!("Erro no watcher: {:?}", e)),
         }
-    }).unwrap();
+    }) {
+        Ok(w) => w,
+        Err(e) => {
+            log_error(&format!("Erro ao criar watcher: {:?}", e));
+            panic!("Erro ao criar watcher.");
+        }
+    };
 
-    watcher.watch(Path::new(diretorio), RecursiveMode::Recursive).unwrap();
-
-    println!("Iniciado!...");
+    if let Err(e) = watcher.watch(Path::new(diretorio), RecursiveMode::Recursive) {
+        log_error(&format!("Erro ao iniciar watcher: {:?}", e));
+        panic!("Erro ao iniciar watcher.");
+    }
 
     let counter = AtomicUsize::new(1);
 
@@ -45,11 +66,30 @@ fn main() {
                     }
                 }
             }
-            Err(e) => println!("Erro ao receber evento: {:?}", e),
+            Err(e) => log_error(&format!("Erro ao receber evento: {:?}", e)),
         }
     }
 }
 
+fn log_error(message: &str) {
+    let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let log_line = format!("[{}] {}\n", timestamp, message);
+    
+    let mut file = match OpenOptions::new()
+        .create(true) // Cria o arquivo se não existir
+        .append(true) // Adiciona ao final do arquivo
+        .open("monitor_erros.log") {
+            Ok(f) => f,
+            Err(_e) => {
+                // Se falhar ao abrir o arquivo, não tem muito o que fazer sem console
+                return;
+            }
+        };
+    
+    if let Err(_e) = file.write_all(log_line.as_bytes()) {
+        // Se falhar ao escrever, ignora silenciosamente (nao tem console mesmo..kkkk)
+    }
+}
 
 fn extrair_dados(path: &Path) -> (Option<String>, Option<String>, Option<String>) {
     let path_str = path.to_str().unwrap_or("");
@@ -75,7 +115,6 @@ fn extrair_data(path_str: &str) -> Option<String> {
 }
 
 fn extrair_tel(path_str: &str) -> Option<String> {
-
     let parts: Vec<&str> = path_str.split('-').collect();
     if let Some(last_part) = parts.first() {
         let file_parts: Vec<&str> = last_part.split('\\').collect();
@@ -97,7 +136,6 @@ fn extrair_operacao(path_str: &str) -> Option<String> {
         }
     }
     None
-
 }
 
 fn inserir<AC: AutocommitMode>(cnx: &Connection<'_, AC>, path_do_audio: &str, data_ligacao: Option<String>, telefone: Option<String>, op: Option<String>, ii: usize) {
@@ -105,10 +143,14 @@ fn inserir<AC: AutocommitMode>(cnx: &Connection<'_, AC>, path_do_audio: &str, da
     let tele = telefone.map_or_else(|| "NULL".to_string(), |t| t);
     let operacao = op.map_or_else(|| "NULL".to_string(), |o| o);
     let query = format!("INSERT INTO TESTE.dbo.TABELA (URL, TELEFONE, OP, DATA_LIGACAO) VALUES ('{}', '{}', '{}','{}')", path_do_audio, tele, operacao, data_lig);
-    let stmt = Statement::with_parent(cnx).expect("Falha ao preparar query.");
-    let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    match stmt.exec_direct(&query) {
-        Ok(_) => println!("{:4} | {} | Arquivo recebido: {:?}", ii, timestamp, path_do_audio),
-        Err(e) => println!("Erro ao inserir: {:?}", e),
+    
+    match Statement::with_parent(cnx) {
+        Ok(stmt) => {
+            let _timestamp = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            if let Err(_e) = stmt.exec_direct(&query) {
+                log_error(&format!("Erro ao inserir (ID {}): {:?}", ii, _e));
+            }
+        }
+        Err(_e) => log_error(&format!("Falha ao preparar query (ID {}): {:?}", ii, _e)),
     }
 }
